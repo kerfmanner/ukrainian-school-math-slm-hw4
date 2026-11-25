@@ -1,0 +1,39 @@
+seed: 42
+
+paths:
+  raw_dir: data/raw
+  processed_dir: data/processed
+  outputs_dir: outputs
+  train_csv: data/raw/train.csv
+  test_csv: data/raw/test.csv
+  sample_submission_csv: data/raw/sample_submission.csv
+  split_file: data/processed/split.json
+  worked_solutions_jsonl: null
+
+split:
+  val_ratio: 0.2
+  stratify_column: skill
+
+models:
+  default: gemma3_4b_it
+  candidates:
+    gemma3_4b_it: google/gemma-3-4b-it
+    mamaylm_gemma3_4b_it: INSAIT-Institute/MamayLM-Gemma-3-4B-IT-v1.0
+
+prompts:
+  directory: prompts
+  default: baseline_cot
+
+extraction:
+  last_number_fallback: true
+
+sandbox:
+  timeout_seconds: 2.0
+  memory_limit_mb: 512
+  max_code_chars: 4000
+  max_output_chars: 2000
+  allowed_modules: [math, fractions, decimal]
+
+submission:
+  fallback_answer: "0"
+  expected_rows: 3561
