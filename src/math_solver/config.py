@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from math_solver.generation import BACKENDS, Precision
 from math_solver.normalize import normalize_answer
 from math_solver.structured import ConfigError, build_dataclass, load_yaml_mapping
 from math_solver.tool_use import SandboxSettings
@@ -12,6 +13,7 @@ __all__ = [
     "ALLOWED_SUBMISSION_MODEL_IDS",
     "ConfigError",
     "ExtractionConfig",
+    "InferenceConfig",
     "ModelsConfig",
     "PathsConfig",
     "ProjectConfig",
@@ -100,6 +102,28 @@ class SubmissionConfig:
 
 
 @dataclass(frozen=True)
+class InferenceConfig:
+    backend: str
+    precision: str
+    batch_size: int
+    max_new_tokens: int
+    temperature: float
+    top_p: float
+    top_k: int
+    num_samples: int
+
+    def __post_init__(self) -> None:
+        if self.backend not in BACKENDS:
+            raise ConfigError(f"inference.backend must be one of {list(BACKENDS)}, got '{self.backend}'")
+        allowed_precisions = [precision.value for precision in Precision]
+        if self.precision not in allowed_precisions:
+            raise ConfigError(f"inference.precision must be one of {allowed_precisions}, got '{self.precision}'")
+        for name in ("batch_size", "max_new_tokens", "num_samples"):
+            if getattr(self, name) < 1:
+                raise ConfigError(f"inference.{name} must be >= 1, got {getattr(self, name)}")
+
+
+@dataclass(frozen=True)
 class ProjectConfig:
     seed: int
     paths: PathsConfig
@@ -109,6 +133,7 @@ class ProjectConfig:
     extraction: ExtractionConfig
     sandbox: SandboxSettings
     submission: SubmissionConfig
+    inference: InferenceConfig
 
 
 def load_config(path: Path) -> ProjectConfig:
