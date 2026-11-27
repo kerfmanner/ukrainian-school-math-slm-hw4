@@ -64,7 +64,7 @@ def test_every_prompt_renders_without_leftover_placeholders(name: str) -> None:
     template = load_prompt(PROMPTS_DIR, name)
     examples = EXAMPLES if template.few_shot is not None else ()
     messages = template.render_messages(statement="Обчисли: 2 + 3", skill_title="Додавання", examples=examples)
-    assert [message["role"] for message in messages] == ["system", "user"]
+    assert [message["role"] for message in messages] == ["system", *["user", "assistant"] * len(examples), "user"]
     user = messages[-1]["content"]
     assert "Обчисли: 2 + 3" in user
     assert "{{" not in user and "}}" not in user
@@ -79,23 +79,46 @@ def test_baseline_prompt_requests_parseable_marker() -> None:
     assert extract_answer("Відповідь: 5", marker=template.answer_marker).answer == "5"
 
 
-def test_direct_few_shot_prompt_renders_problem_answer_pairs_in_order() -> None:
+def test_direct_few_shot_prompt_renders_examples_as_chat_turns_in_order() -> None:
     template = load_prompt(PROMPTS_DIR, "few_shot_direct")
     assert template.few_shot is not None and not template.few_shot.solution_sources
-    user = template.render_messages(statement="Нова", skill_title="Тема", examples=EXAMPLES)[-1]["content"]
-    first = user.index("Задача: Обчисли: 207 : 10\nВідповідь: 207/10")
-    second = user.index("Задача: Обчисли: 2,983 × 10\nВідповідь: 29.83")
-    assert first < second < user.index("Задача: Нова")
-    assert "207 : 10 = 207/10" not in user
+    assert template.max_new_tokens == 64
+    messages = template.render_messages(statement="Нова", skill_title="Тема", examples=EXAMPLES)
+    turns = [(message["role"], message["content"]) for message in messages[1:]]
+    assert "Задача: Обчисли: 207 : 10" in turns[0][1] and turns[0][0] == "user"
+    assert turns[1] == ("assistant", "Відповідь: 207/10")
+    assert "Задача: Обчисли: 2,983 × 10" in turns[2][1]
+    assert turns[3] == ("assistant", "Відповідь: 29.83")
+    assert "Задача: Нова" in turns[4][1]
+    assert all("207 : 10 = 207/10" not in content for _, content in turns)
 
 
-def test_cot_few_shot_prompt_renders_solutions() -> None:
+def test_chat_few_shot_example_turns_match_the_final_question_format() -> None:
+    template = load_prompt(PROMPTS_DIR, "few_shot_direct")
+    messages = template.render_messages(statement="Нова", skill_title="Множення й ділення", examples=EXAMPLES[:1])
+    expected = template.render_messages(statement="Обчисли: 207 : 10", skill_title="Множення й ділення", examples=EXAMPLES[:1])
+    assert messages[1]["content"] == expected[-1]["content"]
+    assert all("Нова" not in message["content"] for message in messages[:-1])
+
+
+def test_cot_few_shot_prompt_renders_solutions_as_assistant_turns() -> None:
     template = load_prompt(PROMPTS_DIR, "few_shot_cot")
     assert template.few_shot is not None
     assert template.few_shot.solution_sources == ("worked", "steps")
     assert template.few_shot.require_solution is True
-    user = template.render_messages(statement="Нова", skill_title="Тема", examples=EXAMPLES[:1])[-1]["content"]
-    assert "Задача: Обчисли: 207 : 10\nРозв'язання:\n207 : 10 = 207/10\nВідповідь: 207/10" in user
+    messages = template.render_messages(statement="Нова", skill_title="Тема", examples=EXAMPLES[:1])
+    assert [message["role"] for message in messages] == ["system", "user", "assistant", "user"]
+    assert messages[2]["content"] == "207 : 10 = 207/10\nВідповідь: 207/10"
+    assert "Задача: Обчисли: 207 : 10" in messages[1]["content"]
+
+
+def test_inline_layout_keeps_examples_inside_the_user_turn(minimal_prompt: dict[str, Any], tmp_path: Path) -> None:
+    few_shot = {"num_examples": 2, "same_skill": True, "layout": "inline", "example": "{{statement}} -> {{answer}}"}
+    payload = {**minimal_prompt, "user": "{{examples}}\nЗадача: {{statement}}\nВідповідь: <число>", "few_shot": few_shot}
+    _write_prompt(tmp_path, payload)
+    messages = load_prompt(tmp_path, "tiny").render_messages(statement="Нова", skill_title="Тема", examples=EXAMPLES)
+    assert [message["role"] for message in messages] == ["system", "user"]
+    assert messages[-1]["content"].startswith("Обчисли: 207 : 10 -> 207/10\n\nОбчисли: 2,983 × 10 -> 29.83\nЗадача: Нова")
 
 
 def test_few_shot_prompt_requires_examples() -> None:
@@ -163,6 +186,26 @@ def test_placeholders_tolerate_spaces() -> None:
         ({"extra": 1}, "unknown keys"),
         ({"self_consistency": {"num_samples": 1, "temperature": 0.7, "aggregation": "majority_vote"}}, "num_samples"),
         ({"tool_use": {"language": "python", "result_message": "без результату"}}, "result"),
+        ({"max_new_tokens": 0}, "max_new_tokens"),
+        (
+            {"few_shot": {"num_examples": 1, "same_skill": True, "example": "{{answer}}"}},
+            "must end the reply",
+        ),
+        (
+            {"few_shot": {"num_examples": 1, "same_skill": True, "example": "Відповідь: так"}},
+            "{{answer}}",
+        ),
+        (
+            {"few_shot": {"num_examples": 1, "same_skill": True, "layout": "table", "example": "Відповідь: {{answer}}"}},
+            "layout",
+        ),
+        (
+            {
+                "user": "{{statement}} {{examples}} Відповідь:",
+                "few_shot": {"num_examples": 1, "same_skill": True, "example": "Відповідь: {{answer}}"},
+            },
+            "exactly when few_shot.layout",
+        ),
     ],
 )
 def test_invalid_prompt_files_raise(
@@ -191,7 +234,7 @@ def test_invalid_few_shot_specs_raise(
     payload = {
         **minimal_prompt,
         "user": "{{statement}} {{examples}} Відповідь:",
-        "few_shot": {"num_examples": 2, "same_skill": True, **few_shot},
+        "few_shot": {"num_examples": 2, "same_skill": True, "layout": "inline", **few_shot},
     }
     _write_prompt(tmp_path, payload)
     with pytest.raises(ConfigError, match=message):
@@ -199,9 +242,9 @@ def test_invalid_few_shot_specs_raise(
 
 
 def test_few_shot_section_without_placeholder_raises(minimal_prompt: dict[str, Any], tmp_path: Path) -> None:
-    few_shot = {"num_examples": 2, "same_skill": True, "example": "{{statement}} {{answer}}"}
+    few_shot = {"num_examples": 2, "same_skill": True, "layout": "inline", "example": "{{statement}} {{answer}}"}
     _write_prompt(tmp_path, {**minimal_prompt, "few_shot": few_shot})
-    with pytest.raises(ConfigError, match="used together"):
+    with pytest.raises(ConfigError, match="exactly when few_shot.layout"):
         load_prompt(tmp_path, "tiny")
 
 

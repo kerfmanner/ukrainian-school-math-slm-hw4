@@ -113,7 +113,7 @@ def resolve_sampling(
         raise ConfigError(f"Prompt '{template.name}' is a self-consistency prompt and needs num_samples >= 2")
     try:
         return SamplingConfig(
-            max_new_tokens=_first_set(max_new_tokens, defaults.max_new_tokens),
+            max_new_tokens=_first_set(max_new_tokens, template.max_new_tokens, defaults.max_new_tokens),
             temperature=_first_set(temperature, spec_temperature, defaults.temperature),
             top_p=defaults.top_p,
             top_k=defaults.top_k,

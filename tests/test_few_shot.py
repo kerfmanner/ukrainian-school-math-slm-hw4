@@ -132,8 +132,8 @@ def test_worked_solution_takes_priority_over_steps(pool: pd.DataFrame) -> None:
 def test_rendered_cot_example_drops_empty_solution_line(pool: pd.DataFrame) -> None:
     template = load_prompt(REPO_ROOT / "prompts", "few_shot_cot")
     example = {"statement": "Задача А", "skill_title": "Т", "answer": "5", "solution": ""}
-    user = template.render_messages(statement="Нова", skill_title="Т", examples=[example])[-1]["content"]
-    assert "Задача: Задача А\nРозв'язання:\nВідповідь: 5" in user
+    messages = template.render_messages(statement="Нова", skill_title="Т", examples=[example])
+    assert messages[2] == {"role": "assistant", "content": "Відповідь: 5"}
 
 
 @pytest.mark.parametrize(

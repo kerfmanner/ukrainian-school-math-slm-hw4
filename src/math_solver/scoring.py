@@ -14,8 +14,10 @@ import pandas as pd
 from math_solver.data_io import read_text_csv, require_columns
 from math_solver.evaluate import EvaluationReport, evaluate_predictions, is_exact_match
 from math_solver.extract import ExtractionMethod, ExtractionResult, extract_answer
+from math_solver.config import ProjectConfig
 from math_solver.health import HealthSummary
-from math_solver.run_records import RunRecord, RunRecordError, require_consistent_signature
+from math_solver.prompts import PromptTemplate
+from math_solver.run_records import RunRecord, RunRecordError, read_records, require_consistent_signature
 from math_solver.split import apply_split, load_split
 from math_solver.tool_use import ExecutionStatus, SandboxSettings, ToolExecutionResult, solve_batch_with_tool
 from math_solver.voting import VoteResult, log_agreement, vote_on_extractions
@@ -40,6 +42,7 @@ class SampleAnswer:
     answer: str | None
     method: str
     tool_status: str | None = None
+    tool_detail: str | None = None
 
 
 @dataclass(frozen=True)
@@ -60,6 +63,26 @@ class ScoredProblem:
 class Reference:
     answer: str
     statement: str
+
+
+def load_run_file(path: Path) -> list[RunRecord]:
+    if not path.is_file():
+        raise FileNotFoundError(f"Run file not found: {path}")
+    records_file = read_records(path)
+    if records_file.truncated_tail_offset is not None:
+        logger.warning("Ignoring a partially written last line in %s", path)
+    validate_run(records_file.records)
+    return records_file.records
+
+
+def scoring_options(config: ProjectConfig, template: PromptTemplate, *, tool_text_fallback: bool) -> ScoringOptions:
+    return ScoringOptions(
+        marker=template.answer_marker,
+        use_tool=template.tool_use is not None,
+        last_number_fallback=config.extraction.last_number_fallback,
+        tool_text_fallback=tool_text_fallback,
+        sandbox=config.sandbox,
+    )
 
 
 def validate_run(records: Sequence[RunRecord]) -> None:
@@ -173,12 +196,13 @@ def metrics_payload(
 
 def _sample_answer(completion: str, tool_result: ToolExecutionResult | None, options: ScoringOptions) -> SampleAnswer:
     status = None if tool_result is None else tool_result.status.value
+    detail = None if tool_result is None else tool_result.error or tool_result.raw_output
     if tool_result is not None and tool_result.status is ExecutionStatus.OK:
-        return SampleAnswer(tool_result.answer, TOOL_METHOD, status)
+        return SampleAnswer(tool_result.answer, TOOL_METHOD, status, detail)
     if tool_result is not None and not options.tool_text_fallback:
-        return SampleAnswer(None, ExtractionMethod.FALLBACK.value, status)
+        return SampleAnswer(None, ExtractionMethod.FALLBACK.value, status, detail)
     extraction = extract_answer(completion, marker=options.marker, last_number_fallback=options.last_number_fallback)
-    return SampleAnswer(extraction.answer, extraction.method.value, status)
+    return SampleAnswer(extraction.answer, extraction.method.value, status, detail)
 
 
 def _aggregate(record: RunRecord, samples: Sequence[SampleAnswer]) -> ScoredProblem:

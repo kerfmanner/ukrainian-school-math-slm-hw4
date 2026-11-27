@@ -17,6 +17,12 @@ SOLUTION_PLACEHOLDER = "solution"
 STEPS_SOURCE = "steps"
 TOOL_RESULT_PLACEHOLDER = "result"
 EXAMPLES_PLACEHOLDER = "examples"
+INLINE_LAYOUT = "inline"
+CHAT_LAYOUT = "chat"
+FEW_SHOT_LAYOUTS = frozenset({INLINE_LAYOUT, CHAT_LAYOUT})
+SYSTEM_ROLE = "system"
+USER_ROLE = "user"
+ASSISTANT_ROLE = "assistant"
 
 ChatMessage = dict[str, str]
 
@@ -30,6 +36,7 @@ class FewShotSpec:
     num_examples: int
     same_skill: bool
     example: str
+    layout: str = CHAT_LAYOUT
     separator: str = "\n\n"
     solution_sources: tuple[str, ...] = ()
     steps_template: str | None = None
@@ -39,6 +46,8 @@ class FewShotSpec:
     def __post_init__(self) -> None:
         if self.num_examples < 1:
             raise ConfigError(f"few_shot.num_examples must be >= 1, got {self.num_examples}")
+        if self.layout not in FEW_SHOT_LAYOUTS:
+            raise ConfigError(f"few_shot.layout must be one of {sorted(FEW_SHOT_LAYOUTS)}, got '{self.layout}'")
         example_placeholders = _require_placeholders_within(self.example, EXAMPLE_PLACEHOLDERS, "few_shot.example")
         self._validate_solution_sources(SOLUTION_PLACEHOLDER in example_placeholders)
         if self.steps_template is not None:
@@ -95,6 +104,7 @@ class PromptTemplate:
     few_shot: FewShotSpec | None = None
     self_consistency: SelfConsistencySpec | None = None
     tool_use: ToolUseSpec | None = None
+    max_new_tokens: int | None = None
 
     def __post_init__(self) -> None:
         if placeholders(self.system):
@@ -102,10 +112,28 @@ class PromptTemplate:
         user_placeholders = _require_placeholders_within(self.user, USER_PLACEHOLDERS, f"{self.name}.user")
         if "statement" not in user_placeholders:
             raise ConfigError(f"Prompt '{self.name}': user text must contain {{{{statement}}}}")
-        if (EXAMPLES_PLACEHOLDER in user_placeholders) != (self.few_shot is not None):
-            raise ConfigError(f"Prompt '{self.name}': {{{{examples}}}} and the few_shot section must be used together")
+        if (EXAMPLES_PLACEHOLDER in user_placeholders) != self._uses_inline_examples:
+            raise ConfigError(
+                f"Prompt '{self.name}': {{{{examples}}}} must be used exactly when few_shot.layout is '{INLINE_LAYOUT}'"
+            )
         if self.answer_marker not in self.user:
             raise ConfigError(f"Prompt '{self.name}': user text must request the answer marker '{self.answer_marker}'")
+        if self.few_shot is not None and self.few_shot.layout == CHAT_LAYOUT:
+            self._validate_chat_example(self.few_shot)
+        if self.max_new_tokens is not None and self.max_new_tokens < 1:
+            raise ConfigError(f"Prompt '{self.name}': max_new_tokens must be >= 1, got {self.max_new_tokens}")
+
+    @property
+    def _uses_inline_examples(self) -> bool:
+        return self.few_shot is not None and self.few_shot.layout == INLINE_LAYOUT
+
+    def _validate_chat_example(self, spec: FewShotSpec) -> None:
+        if "answer" not in placeholders(spec.example):
+            raise ConfigError(f"Prompt '{self.name}': chat few_shot.example must contain {{{{answer}}}}")
+        if self.answer_marker not in spec.example:
+            raise ConfigError(
+                f"Prompt '{self.name}': chat few_shot.example must end the reply with '{self.answer_marker}'"
+            )
 
     def render_messages(
         self,
@@ -114,15 +142,19 @@ class PromptTemplate:
         skill_title: str,
         examples: Sequence[Mapping[str, str]] = (),
     ) -> list[ChatMessage]:
-        values = {"statement": statement, "skill_title": skill_title}
-        if self.few_shot is not None:
-            values[EXAMPLES_PLACEHOLDER] = self._render_examples(examples)
-        elif examples:
+        if self.few_shot is None and examples:
             raise PromptError(f"Prompt '{self.name}' does not accept few-shot examples")
+        if self.few_shot is not None and not examples:
+            raise PromptError(f"Prompt '{self.name}' requires at least one few-shot example")
+        values = {"statement": statement, "skill_title": skill_title}
         messages: list[ChatMessage] = []
         if self.system.strip():
-            messages.append({"role": "system", "content": self.system.strip()})
-        messages.append({"role": "user", "content": substitute(self.user, values).strip()})
+            messages.append({"role": SYSTEM_ROLE, "content": self.system.strip()})
+        if self._uses_inline_examples:
+            values[EXAMPLES_PLACEHOLDER] = self._render_inline_examples(examples)
+        elif self.few_shot is not None:
+            messages.extend(self._render_example_turns(examples))
+        messages.append({"role": USER_ROLE, "content": substitute(self.user, values).strip()})
         return messages
 
     def render_tool_result(self, result: str) -> str:
@@ -130,13 +162,21 @@ class PromptTemplate:
             raise PromptError(f"Prompt '{self.name}' has no tool_use section")
         return substitute(self.tool_use.result_message, {TOOL_RESULT_PLACEHOLDER: result}).strip()
 
-    def _render_examples(self, examples: Sequence[Mapping[str, str]]) -> str:
+    def _render_inline_examples(self, examples: Sequence[Mapping[str, str]]) -> str:
         if self.few_shot is None:
             raise PromptError(f"Prompt '{self.name}' has no few_shot section")
-        if not examples:
-            raise PromptError(f"Prompt '{self.name}' requires at least one few-shot example")
         rendered = [substitute(self.few_shot.example, example).strip() for example in examples]
         return self.few_shot.separator.join(rendered)
+
+    def _render_example_turns(self, examples: Sequence[Mapping[str, str]]) -> list[ChatMessage]:
+        if self.few_shot is None:
+            raise PromptError(f"Prompt '{self.name}' has no few_shot section")
+        turns: list[ChatMessage] = []
+        for example in examples:
+            question = {"statement": example["statement"], "skill_title": example["skill_title"]}
+            turns.append({"role": USER_ROLE, "content": substitute(self.user, question).strip()})
+            turns.append({"role": ASSISTANT_ROLE, "content": substitute(self.few_shot.example, example).strip()})
+        return turns
 
 
 def placeholders(text: str) -> set[str]:

@@ -15,17 +15,17 @@ from math_solver.health import summarize_health
 from math_solver.inference import TEST_SPLIT, VAL_SPLIT
 from math_solver.logging_utils import configure_logging
 from math_solver.prompts import PromptError, load_prompt
-from math_solver.run_records import RunRecord, RunRecordError, read_records
+from math_solver.run_records import RunRecord, RunRecordError
 from math_solver.scoring import (
     ScoredProblem,
-    ScoringOptions,
     evaluate_scored,
+    load_run_file,
     load_val_references,
     metrics_payload,
     mispredicted_rows,
     score_records,
+    scoring_options,
     tool_status_counts,
-    validate_run,
     write_jsonl,
 )
 from math_solver.split import SplitError
@@ -52,16 +52,6 @@ def parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument("--allow-mock", action="store_true")
     parser.add_argument("--log-level", default="INFO")
     return parser.parse_args(argv)
-
-
-def load_run(path: Path) -> list[RunRecord]:
-    if not path.is_file():
-        raise FileNotFoundError(f"Run file not found: {path}")
-    records_file = read_records(path)
-    if records_file.truncated_tail_offset is not None:
-        logger.warning("Ignoring a partially written last line in %s", path)
-    validate_run(records_file.records)
-    return records_file.records
 
 
 def score_val(
@@ -129,15 +119,9 @@ def score_test(
 
 
 def run(config: ProjectConfig, args: argparse.Namespace) -> int:
-    records = load_run(args.run)
+    records = load_run_file(args.run)
     template = load_prompt(config.prompts.directory, records[0].prompt_name)
-    options = ScoringOptions(
-        marker=template.answer_marker,
-        use_tool=template.tool_use is not None,
-        last_number_fallback=config.extraction.last_number_fallback,
-        tool_text_fallback=args.tool_text_fallback,
-        sandbox=config.sandbox,
-    )
+    options = scoring_options(config, template, tool_text_fallback=args.tool_text_fallback)
     split = records[0].split
     logger.info(
         "run=%s split=%s prompt=%s problems=%d tool_use=%s",

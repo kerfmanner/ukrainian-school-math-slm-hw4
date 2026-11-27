@@ -1,0 +1,477 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>__REPORT_TITLE__</title>
+<style>
+:root {
+  --bg: #f6f6f3; --panel: #ffffff; --text: #1c1c1f; --muted: #686870; --border: #e2e2dd;
+  --good: #1d7f46; --good-bg: #e3f3e8; --bad: #bf3426; --bad-bg: #fbe8e5;
+  --warn: #9a6200; --warn-bg: #fcf1d8; --mark: #fff0a0; --code: #f1f1ed; --hover: #f0f0eb;
+  --run0: #3b5bdb; --run1: #e8590c; --run2: #2b8a3e; --run3: #ae3ec9;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #131315; --panel: #1c1c1f; --text: #ebebee; --muted: #9b9ba3; --border: #2e2e33;
+    --good: #52c482; --good-bg: #173222; --bad: #ff8070; --bad-bg: #3b1d19;
+    --warn: #f0b64a; --warn-bg: #3a2c11; --mark: #574800; --code: #25252a; --hover: #24242a;
+    --run0: #8ea2ff; --run1: #ff9b5e; --run2: #69d17f; --run3: #e08cf0;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+header, main { max-width: 1400px; margin: 0 auto; padding: 0 24px; }
+header { padding-top: 28px; padding-bottom: 8px; }
+h1 { font-size: 22px; margin: 0 0 4px; }
+h2 { font-size: 16px; margin: 0 0 12px; }
+h3 { font-size: 13px; margin: 0 0 8px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.muted { color: var(--muted); }
+.mono, pre, code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12.5px; }
+section { margin: 20px 0; }
+.panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 16px; min-width: 0; overflow-x: auto; }
+.wide { grid-column: 1 / -1; }
+.grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); }
+.run-card { border-top: 4px solid var(--run-color); }
+.run-card .meta { display: grid; grid-template-columns: max-content 1fr; gap: 2px 12px; margin: 8px 0 14px; font-size: 12.5px; }
+.run-card .meta dt { color: var(--muted); }
+.run-card .meta dd { margin: 0; overflow-wrap: anywhere; }
+.tiles { display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); }
+.tile { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; }
+.tile .value { font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.tile .name { font-size: 12px; color: var(--muted); }
+.tile.good .value { color: var(--good); } .tile.bad .value { color: var(--bad); } .tile.warn .value { color: var(--warn); }
+.note { margin-top: 10px; font-size: 12.5px; color: var(--warn); }
+table { border-collapse: collapse; width: 100%; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+th { font-size: 12px; color: var(--muted); font-weight: 600; white-space: nowrap; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.legend-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--run-color); margin-right: 6px; vertical-align: -1px; }
+.bar-cell { min-width: 170px; }
+.bar { position: relative; height: 18px; background: var(--code); border-radius: 4px; overflow: hidden; }
+.bar > span { position: absolute; inset: 0 auto 0 0; background: var(--run-color); opacity: .85; }
+.bar > em { position: absolute; right: 6px; top: 0; font-style: normal; font-size: 11.5px; line-height: 18px; font-variant-numeric: tabular-nums; }
+.hist { display: block; }
+.hist rect { fill: var(--run-color); opacity: .85; }
+.hist rect.limit { fill: var(--bad); }
+.hist text { fill: var(--muted); font-size: 10px; }
+.controls { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: end; margin-bottom: 12px; }
+.controls label { display: flex; flex-direction: column; font-size: 12px; color: var(--muted); gap: 3px; }
+.controls label.check { flex-direction: row; align-items: center; gap: 6px; color: var(--text); padding-bottom: 6px; }
+input[type=search], select { font: inherit; color: var(--text); background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px; }
+input[type=search] { width: 260px; }
+button { font: inherit; color: var(--text); background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 5px 12px; cursor: pointer; }
+button:disabled { opacity: .45; cursor: default; }
+.explorer-table tbody tr.row { cursor: pointer; }
+.explorer-table tbody tr.row:hover { background: var(--hover); }
+.explorer-table tbody tr.row.open { background: var(--hover); }
+.statement { max-width: 420px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chip { display: inline-block; padding: 0 6px; border-radius: 4px; background: var(--code); font-size: 11.5px; white-space: nowrap; }
+.badge { display: inline-block; min-width: 18px; text-align: center; border-radius: 4px; font-weight: 700; margin-right: 6px; }
+.badge.good { color: var(--good); background: var(--good-bg); } .badge.bad { color: var(--bad); background: var(--bad-bg); }
+.flag { display: inline-block; margin-left: 6px; padding: 0 5px; border-radius: 4px; font-size: 11px; color: var(--warn); background: var(--warn-bg); }
+.method { color: var(--muted); font-size: 11.5px; margin-left: 4px; }
+.pager { display: flex; gap: 10px; align-items: center; margin-top: 12px; }
+.detail-cell { background: var(--bg); padding: 14px; }
+.detail-head { margin-bottom: 12px; }
+.detail-head .statement-full { white-space: pre-wrap; font-size: 15px; margin: 4px 0 8px; }
+.run-detail { border-left: 4px solid var(--run-color); }
+.run-detail .answer-line { font-size: 15px; margin-bottom: 8px; }
+details { margin-top: 8px; }
+summary { cursor: pointer; font-size: 12.5px; }
+pre { white-space: pre-wrap; overflow-wrap: anywhere; background: var(--code); border-radius: 6px; padding: 10px; margin: 6px 0 0; max-height: 520px; overflow: auto; }
+pre mark { background: var(--mark); color: inherit; border-radius: 2px; }
+.dist { font-size: 12.5px; }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="title"></h1>
+  <p id="subtitle" class="muted"></p>
+</header>
+<main>
+  <section id="runs" class="grid"></section>
+  <section id="comparison"></section>
+  <section id="breakdowns" class="grid"></section>
+  <section id="explorer" class="panel"></section>
+</main>
+<script type="application/json" id="report-data">__REPORT_DATA__</script>
+<script>
+"use strict";
+const DATA = JSON.parse(document.getElementById("report-data").textContent);
+const PAGE_SIZE = 50;
+const ISSUES = ["empty", "garbled", "repetitive", "truncated"];
+const state = { page: 0, open: new Set(), filtered: DATA.problems };
+
+function el(tag, props, ...children) {
+  const node = document.createElement(tag);
+  for (const [key, value] of Object.entries(props || {})) {
+    if (value === null || value === undefined || value === false) continue;
+    if (key === "class") node.className = value;
+    else if (key.startsWith("on")) node.addEventListener(key.slice(2), value);
+    else node.setAttribute(key, value === true ? "" : String(value));
+  }
+  for (const child of children.flat(Infinity)) {
+    if (child === null || child === undefined || child === false) continue;
+    node.append(child instanceof Node ? child : String(child));
+  }
+  return node;
+}
+
+function svg(tag, attrs, ...children) {
+  const node = document.createElementNS("http://www.w3.org/2000/svg", tag);
+  for (const [key, value] of Object.entries(attrs || {})) node.setAttribute(key, String(value));
+  for (const child of children) node.append(child instanceof Node ? child : String(child));
+  return node;
+}
+
+const runStyle = (index) => `--run-color: var(--run${index % 4})`;
+const pct = (value) => (value === null || value === undefined ? "—" : `${(100 * value).toFixed(1)}%`);
+const fixed = (value, digits = 1) => (value === null || value === undefined ? "—" : Number(value).toFixed(digits));
+const answerText = (value) => (value === null || value === undefined ? "∅" : value);
+
+function tile(name, value, tone) {
+  return el("div", { class: `tile ${tone || ""}` }, el("div", { class: "value" }, value), el("div", { class: "name" }, name));
+}
+
+function renderHeader() {
+  document.getElementById("title").textContent = DATA.title;
+  const kind = DATA.runs.length > 1 ? `comparison of ${DATA.runs.length} runs` : "single run";
+  document.getElementById("subtitle").textContent =
+    `${DATA.split} split · ${DATA.problems.length} problems · ${kind} · generated ${DATA.generated_at}`;
+}
+
+function renderRunCards() {
+  const host = document.getElementById("runs");
+  DATA.runs.forEach((run, index) => {
+    const params = run.params;
+    const meta = [
+      ["run", run.name],
+      ["model", run.model_id],
+      ["adapter", params.adapter_path],
+      ["prompt", run.prompt_name],
+      ["backend", `${params.backend} · ${params.gpu_name || "no GPU"}`],
+      ["precision", `${params.precision} · ${params.dtype} · ${params.quantization}`],
+      ["decoding", `${params.do_sample ? `sampling T=${params.temperature} top_p=${params.top_p} top_k=${params.top_k}` : "greedy"} · ${params.num_samples} sample(s) · max ${params.max_new_tokens} tokens`],
+      ["seed / batch", `${params.seed} / ${params.batch_size}`],
+    ].filter(([, value]) => value !== null && value !== undefined);
+    const metrics = run.metrics;
+    const tiles = [];
+    if (metrics) {
+      tiles.push(tile("accuracy", pct(metrics.accuracy), "good"));
+      tiles.push(tile("correct", `${metrics.correct} / ${metrics.evaluated}`));
+    } else {
+      tiles.push(tile("problems", run.problems));
+    }
+    tiles.push(tile("unparsed", run.unparsed_predictions, run.unparsed_predictions ? "warn" : ""));
+    tiles.push(tile("garbage", `${run.garbage_completions} / ${run.completions}`, run.garbage_completions ? "bad" : ""));
+    tiles.push(tile("truncated", run.issues.truncated || 0, run.issues.truncated ? "warn" : ""));
+    tiles.push(tile("mean tokens", fixed(run.tokens.mean, 0)));
+    const hitLimit = run.tokens.limit !== null && run.tokens.max >= run.tokens.limit;
+    tiles.push(tile("max tokens", `${run.tokens.max} / ${run.tokens.limit ?? "—"}`, hitLimit ? "warn" : ""));
+    if (params.num_samples > 1) tiles.push(tile("mean agreement", pct(run.mean_agreement)));
+    const toolLine = run.use_tool
+      ? el("p", { class: "muted" }, "sandbox: ", Object.entries(run.tool_statuses).map(([key, value]) => `${key}=${value}`).join(", ") || "—")
+      : null;
+    const coverage = metrics && metrics.evaluated < metrics.val_rows
+      ? el("div", { class: "note" }, `Covers ${metrics.evaluated} of ${metrics.val_rows} validation rows.`)
+      : null;
+    host.append(el("div", { class: "panel run-card", style: runStyle(index) },
+      el("h2", null, el("span", { class: "legend-dot" }), run.label),
+      el("dl", { class: "meta" }, meta.map(([key, value]) => [el("dt", null, key), el("dd", { class: "mono" }, value)])),
+      el("div", { class: "tiles" }, tiles),
+      toolLine,
+      coverage));
+  });
+}
+
+function renderComparison() {
+  const comparison = DATA.comparison;
+  if (!comparison) return;
+  const tiles = [tile("common problems", comparison.common_problems), tile("answers differ", comparison.answers_differ, "warn")];
+  if (comparison.common_accuracy) {
+    tiles.push(tile("all correct", comparison.all_correct, "good"));
+    tiles.push(tile("none correct", comparison.none_correct, "bad"));
+  }
+  const table = comparison.common_accuracy
+    ? el("table", null,
+        el("thead", null, el("tr", null, el("th", null, "run"), el("th", { class: "num" }, "accuracy on common problems"), el("th", { class: "num" }, "solved only by this run"))),
+        el("tbody", null, DATA.runs.map((run, index) => el("tr", { style: runStyle(index) },
+          el("td", null, el("span", { class: "legend-dot" }), run.label),
+          el("td", { class: "num" }, pct(comparison.common_accuracy[index])),
+          el("td", { class: "num" }, comparison.unique_correct[index])))))
+    : null;
+  document.getElementById("comparison").append(el("div", { class: "panel" },
+    el("h2", null, "Comparison"), el("div", { class: "tiles" }, tiles), table ? el("div", { style: "margin-top:12px" }, table) : null));
+}
+
+function legendHead(first) {
+  return el("tr", null, el("th", null, first), DATA.runs.map((run, index) =>
+    el("th", { style: runStyle(index) }, el("span", { class: "legend-dot" }), run.label)));
+}
+
+function renderSkillBreakdown(host) {
+  if (!DATA.has_gold) return;
+  const bySkill = new Map();
+  DATA.runs.forEach((run, index) => {
+    for (const row of run.metrics.per_skill) {
+      if (!bySkill.has(row.skill)) bySkill.set(row.skill, []);
+      bySkill.get(row.skill)[index] = row;
+    }
+  });
+  const mean = (rows) => {
+    const values = rows.filter(Boolean).map((row) => row.accuracy);
+    return values.reduce((sum, value) => sum + value, 0) / values.length;
+  };
+  const skills = [...bySkill.entries()].sort((left, right) => mean(left[1]) - mean(right[1]) || left[0].localeCompare(right[0]));
+  host.append(el("div", { class: "panel wide" },
+    el("h2", null, "Accuracy per skill ", el("span", { class: "muted" }, "(worst first)")),
+    el("table", null, el("thead", null, legendHead("skill")), el("tbody", null, skills.map(([skill, rows]) =>
+      el("tr", null, el("td", null, el("span", { class: "chip" }, skill)), DATA.runs.map((run, index) => {
+        const row = rows[index];
+        if (!row) return el("td", { class: "muted" }, "—");
+        return el("td", { class: "bar-cell", style: runStyle(index) }, el("div", { class: "bar" },
+          el("span", { style: `width:${(100 * row.accuracy).toFixed(1)}%` }),
+          el("em", null, `${row.correct}/${row.total} · ${pct(row.accuracy)}`)));
+      })))))));
+}
+
+function renderMethodBreakdown(host) {
+  const methods = new Set();
+  for (const run of DATA.runs) {
+    if (run.metrics) run.metrics.per_method.forEach((row) => methods.add(row.method));
+    else Object.keys(run.method_counts).forEach((method) => methods.add(method));
+  }
+  const cell = (run, method) => {
+    if (!run.metrics) return run.method_counts[method] || 0;
+    const row = run.metrics.per_method.find((item) => item.method === method);
+    if (!row || !row.total) return "—";
+    return `${row.correct}/${row.total} (${pct(row.accuracy)})`;
+  };
+  host.append(el("div", { class: "panel" },
+    el("h2", null, DATA.has_gold ? "Accuracy per extraction method" : "Problems per extraction method"),
+    el("table", null, el("thead", null, legendHead("method")), el("tbody", null, [...methods].map((method) =>
+      el("tr", null, el("td", { class: "mono" }, method), DATA.runs.map((run) => el("td", { class: "num" }, cell(run, method)))))))));
+}
+
+function renderHealth(host) {
+  const rows = [...ISSUES.map((issue) => [issue, (run) => run.issues[issue] || 0]), ["garbage (total)", (run) => run.garbage_completions]];
+  host.append(el("div", { class: "panel" },
+    el("h2", null, "Completion health"),
+    el("table", null, el("thead", null, legendHead("issue")), el("tbody", null, rows.map(([name, value]) =>
+      el("tr", null, el("td", null, name), DATA.runs.map((run) => el("td", { class: "num" }, `${value(run)} / ${run.completions}`)))))),
+    el("p", { class: "muted" }, "Garbage = empty, garbled or repetitive. Truncated alone is not garbage.")));
+}
+
+function histogram(run, index) {
+  const bins = run.tokens.histogram;
+  const width = 340, height = 96, base = 78, barWidth = width / bins.length;
+  const top = Math.max(1, ...bins.map((bin) => bin.count));
+  const chart = svg("svg", { class: "hist", width, height, viewBox: `0 0 ${width} ${height}`, style: runStyle(index), role: "img" });
+  bins.forEach((bin, position) => {
+    const barHeight = (bin.count / top) * (base - 6);
+    const isLimit = run.tokens.limit !== null && position === bins.length - 1 && bin.count > 0 && run.tokens.max >= run.tokens.limit;
+    const rect = svg("rect", { x: position * barWidth + 1, y: base - barHeight, width: barWidth - 2, height: barHeight, class: isLimit ? "limit" : "" },
+      svg("title", null, `${bin.start}–${bin.end} tokens: ${bin.count}`));
+    chart.append(rect);
+  });
+  chart.append(svg("text", { x: 0, y: height - 4 }, "0"));
+  chart.append(svg("text", { x: width, y: height - 4, "text-anchor": "end" }, `${bins[bins.length - 1].end} tokens`));
+  return chart;
+}
+
+function renderTokens(host) {
+  host.append(el("div", { class: "panel" },
+    el("h2", null, "Completion length"),
+    DATA.runs.map((run, index) => el("div", { style: "margin-bottom:10px" },
+      el("h3", { style: runStyle(index) }, el("span", { class: "legend-dot" }), run.label, ` · mean ${fixed(run.tokens.mean, 0)} · max ${run.tokens.max}`),
+      histogram(run, index))),
+    el("p", { class: "muted" }, "The last bar turns red when completions reach the token limit.")));
+}
+
+function sampleFlags(sample) {
+  return sample.health.map((issue) => el("span", { class: "flag" }, issue));
+}
+
+function resultFlags(result) {
+  const issues = new Set(result.samples.flatMap((sample) => sample.health));
+  return [...issues].map((issue) => el("span", { class: "flag" }, issue));
+}
+
+function matchesHealth(result, mode) {
+  if (mode === "any") return true;
+  if (!result) return false;
+  const issues = result.samples.flatMap((sample) => sample.health);
+  if (mode === "flagged") return issues.length > 0;
+  if (mode === "garbage") return result.samples.some((sample) => sample.garbage);
+  if (mode === "clean") return issues.length === 0;
+  return issues.includes(mode);
+}
+
+function matchesOutcome(result, mode) {
+  if (mode === "any") return true;
+  if (mode === "missing") return !result;
+  if (!result) return false;
+  return mode === "correct" ? result.correct === true : result.correct === false;
+}
+
+function buildControls(host, apply) {
+  const skills = [...new Set(DATA.problems.map((problem) => problem.skill))].sort();
+  const methods = [...new Set(DATA.problems.flatMap((problem) => problem.results.filter(Boolean).map((result) => result.method)))].sort();
+  const option = (value, label) => el("option", { value }, label ?? value);
+  const controls = {
+    search: el("input", { type: "search", placeholder: "id, question, answer…" }),
+    inCompletions: el("input", { type: "checkbox" }),
+    skill: el("select", null, option("any", "all skills"), skills.map((skill) => option(skill))),
+    method: el("select", null, option("any", "any method"), methods.map((method) => option(method))),
+    health: el("select", null, option("any", "any"), option("flagged", "any issue"), option("garbage", "garbage"),
+      ISSUES.map((issue) => option(issue)), option("clean", "no issues")),
+    outcomes: DATA.has_gold
+      ? DATA.runs.map(() => el("select", null, option("any"), option("correct"), option("wrong"), DATA.runs.length > 1 ? option("missing") : null))
+      : [],
+    differ: el("input", { type: "checkbox" }),
+  };
+  let timer = null;
+  controls.search.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(apply, 150); });
+  [controls.inCompletions, controls.skill, controls.method, controls.health, controls.differ, ...controls.outcomes]
+    .forEach((node) => node.addEventListener("change", apply));
+  host.append(el("div", { class: "controls" },
+    el("label", null, "search", controls.search),
+    el("label", { class: "check" }, controls.inCompletions, "also search completions"),
+    el("label", null, "skill", controls.skill),
+    el("label", null, "method", controls.method),
+    el("label", null, "health", controls.health),
+    controls.outcomes.map((select, index) => el("label", { style: runStyle(index) },
+      el("span", null, el("span", { class: "legend-dot" }), DATA.runs[index].label), select)),
+    DATA.runs.length > 1 ? el("label", { class: "check" }, controls.differ, "answers differ between runs") : null));
+  return controls;
+}
+
+function filterProblems(controls) {
+  const query = controls.search.value.trim().toLowerCase();
+  const withCompletions = controls.inCompletions.checked;
+  return DATA.problems.filter((problem) => {
+    if (controls.skill.value !== "any" && problem.skill !== controls.skill.value) return false;
+    if (controls.method.value !== "any" && !problem.results.some((result) => result && result.method === controls.method.value)) return false;
+    if (controls.health.value !== "any" && !problem.results.some((result) => matchesHealth(result, controls.health.value))) return false;
+    if (!controls.outcomes.every((select, index) => matchesOutcome(problem.results[index], select.value))) return false;
+    if (controls.differ.checked) {
+      const present = problem.results.filter(Boolean);
+      if (present.length < 2 || new Set(present.map((result) => result.prediction)).size < 2) return false;
+    }
+    if (!query) return true;
+    const fields = [problem.id, problem.statement, problem.gold || "", ...problem.results.filter(Boolean).map((result) => result.prediction || "")];
+    if (withCompletions) problem.results.filter(Boolean).forEach((result) => result.samples.forEach((sample) => fields.push(sample.completion)));
+    return fields.some((field) => field.toLowerCase().includes(query));
+  });
+}
+
+function completionBlock(text, marker) {
+  const pre = el("pre");
+  text.split("\n").forEach((line, index, lines) => {
+    pre.append(marker && line.includes(marker) ? el("mark", null, line) : line);
+    if (index < lines.length - 1) pre.append("\n");
+  });
+  return pre;
+}
+
+function runDetail(run, result, index) {
+  if (!result) return el("div", { class: "panel run-detail", style: runStyle(index) }, el("h3", null, run.label), el("p", { class: "muted" }, "Not in this run."));
+  const badge = result.correct === null ? null : el("span", { class: `badge ${result.correct ? "good" : "bad"}` }, result.correct ? "✓" : "✗");
+  const distribution = result.num_samples > 1
+    ? el("p", { class: "dist mono" }, `votes ${result.votes}/${result.num_samples}: `, result.distribution.map(([answer, count]) => `${answer} ×${count}`).join(", ") || "no answers")
+    : null;
+  const samples = result.samples.map((sample, position) => el("details", { open: position === 0 },
+    el("summary", null,
+      result.num_samples > 1 ? `sample ${position + 1} · ` : "",
+      el("span", { class: "mono" }, answerText(sample.answer)),
+      ` · ${sample.method} · ${sample.tokens} tokens · ${sample.finish_reason}`,
+      sample.tool_status ? ` · sandbox ${sample.tool_status}` : "",
+      sampleFlags(sample)),
+    sample.code ? [el("h3", { style: "margin-top:8px" }, "extracted code"), el("pre", null, sample.code)] : null,
+    sample.tool_detail ? [el("h3", { style: "margin-top:8px" }, "sandbox output"), el("pre", null, sample.tool_detail)] : null,
+    completionBlock(sample.completion, run.marker)));
+  return el("div", { class: "panel run-detail", style: runStyle(index) },
+    el("h3", null, run.label),
+    el("div", { class: "answer-line" }, badge, el("span", { class: "mono" }, answerText(result.prediction)), el("span", { class: "method" }, result.method)),
+    distribution,
+    samples,
+    el("details", null, el("summary", { class: "muted" }, "prompt text"), el("pre", null, result.prompt_text)));
+}
+
+function detailRow(problem, columns) {
+  return el("tr", { class: "detail" }, el("td", { colspan: columns, class: "detail-cell" },
+    el("div", { class: "detail-head" },
+      el("span", { class: "chip" }, problem.skill), " ", el("span", { class: "muted" }, problem.skill_title), " ",
+      el("span", { class: "mono muted" }, `#${problem.id}`),
+      el("div", { class: "statement-full" }, problem.statement),
+      problem.gold !== null ? el("div", null, "correct answer: ", el("strong", { class: "mono" }, problem.gold)) : null),
+    el("div", { class: "grid" }, DATA.runs.map((run, index) => runDetail(run, problem.results[index], index)))));
+}
+
+function resultCell(result) {
+  if (!result) return el("td", { class: "muted" }, "—");
+  const badge = result.correct === null ? null : el("span", { class: `badge ${result.correct ? "good" : "bad"}` }, result.correct ? "✓" : "✗");
+  return el("td", null, badge, el("span", { class: "mono" }, answerText(result.prediction)), el("span", { class: "method" }, result.method), resultFlags(result));
+}
+
+function renderTable(tableBody, pager, columns) {
+  const total = state.filtered.length;
+  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  state.page = Math.min(state.page, pages - 1);
+  const start = state.page * PAGE_SIZE;
+  const rows = state.filtered.slice(start, start + PAGE_SIZE);
+  tableBody.replaceChildren();
+  for (const problem of rows) {
+    const isOpen = state.open.has(problem.id);
+    const row = el("tr", { class: `row ${isOpen ? "open" : ""}`, onclick: () => {
+      if (state.open.has(problem.id)) state.open.delete(problem.id); else state.open.add(problem.id);
+      renderTable(tableBody, pager, columns);
+    } },
+      el("td", { class: "mono" }, problem.id),
+      el("td", null, el("span", { class: "chip" }, problem.skill)),
+      el("td", { class: "statement", title: problem.statement }, problem.statement),
+      DATA.has_gold ? el("td", { class: "mono" }, problem.gold) : null,
+      problem.results.map(resultCell));
+    tableBody.append(row);
+    if (isOpen) tableBody.append(detailRow(problem, columns));
+  }
+  const shown = total ? `${start + 1}–${start + rows.length}` : "0";
+  pager.replaceChildren(
+    el("button", { disabled: state.page === 0, onclick: () => { state.page -= 1; renderTable(tableBody, pager, columns); } }, "← prev"),
+    el("span", null, `page ${state.page + 1} / ${pages}`),
+    el("button", { disabled: state.page >= pages - 1, onclick: () => { state.page += 1; renderTable(tableBody, pager, columns); } }, "next →"),
+    el("span", { class: "muted" }, `showing ${shown} of ${total} matching (${DATA.problems.length} total)`));
+}
+
+function renderExplorer() {
+  const host = document.getElementById("explorer");
+  host.append(el("h2", null, "Problems ", el("span", { class: "muted" }, "(click a row for the question, answers and full completions)")));
+  const columns = 3 + (DATA.has_gold ? 1 : 0) + DATA.runs.length;
+  const tableBody = el("tbody");
+  const pager = el("div", { class: "pager" });
+  const controls = buildControls(host, () => {
+    state.filtered = filterProblems(controls);
+    state.page = 0;
+    renderTable(tableBody, pager, columns);
+  });
+  host.append(el("div", { style: "overflow-x:auto" }, el("table", { class: "explorer-table" },
+    el("thead", null, el("tr", null, el("th", null, "id"), el("th", null, "skill"), el("th", null, "question"),
+      DATA.has_gold ? el("th", null, "correct") : null,
+      DATA.runs.map((run, index) => el("th", { style: runStyle(index) }, el("span", { class: "legend-dot" }), run.label)))),
+    tableBody)), pager);
+  renderTable(tableBody, pager, columns);
+}
+
+renderHeader();
+renderRunCards();
+renderComparison();
+const breakdowns = document.getElementById("breakdowns");
+renderSkillBreakdown(breakdowns);
+renderMethodBreakdown(breakdowns);
+renderHealth(breakdowns);
+renderTokens(breakdowns);
+renderExplorer();
+</script>
+</body>
+</html>

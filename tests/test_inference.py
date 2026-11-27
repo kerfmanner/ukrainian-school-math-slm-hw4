@@ -184,6 +184,14 @@ def test_resolve_sampling_defaults_and_overrides(mini_project: MiniProject) -> N
     template = _template(mini_project, "baseline_cot")
     assert resolve_sampling(template, defaults).num_samples == 1
     assert resolve_sampling(template, defaults, max_new_tokens=32).max_new_tokens == 32
+
+
+def test_resolve_sampling_prefers_prompt_token_cap_over_defaults(mini_project: MiniProject) -> None:
+    defaults = mini_project.config.inference
+    template = _template(mini_project, "few_shot_direct")
+    assert template.max_new_tokens is not None
+    assert resolve_sampling(template, defaults).max_new_tokens == template.max_new_tokens
+    assert resolve_sampling(template, defaults, max_new_tokens=16).max_new_tokens == 16
     with pytest.raises(ConfigError, match="temperature > 0"):
         resolve_sampling(template, defaults, num_samples=4)
 
@@ -211,9 +219,11 @@ def test_default_run_path_is_descriptive(tmp_path: Path) -> None:
 def test_few_shot_direct_uses_train_examples_only(mini_project: MiniProject) -> None:
     problems, messages = _prepare(mini_project, prompt="few_shot_direct")
     val_statements = {problem.statement for problem in problems}
-    content = messages[problems[0].id][-1]["content"]
-    shown = set(re.findall(r"Задача: (.+)", content)) - {problems[0].statement}
+    turns = messages[problems[0].id]
+    example_questions = [turn["content"] for turn in turns[:-1] if turn["role"] == "user"]
+    shown = {match for content in example_questions for match in re.findall(r"Задача: (.+)", content)}
     assert shown and not shown & val_statements
+    assert [turn["role"] for turn in turns[1:]] == ["user", "assistant"] * len(example_questions) + ["user"]
 
 
 def test_few_shot_cot_without_solutions_fails_fast(mini_project: MiniProject) -> None:
