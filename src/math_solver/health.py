@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import unicodedata
 from collections import Counter
 from collections.abc import Iterable
@@ -10,6 +11,9 @@ from math_solver.generation import FinishReason
 
 EXPECTED_SCRIPTS = frozenset({"CYRILLIC", "LATIN", "GREEK"})
 REPLACEMENT_CHARACTER = "�"
+DIGIT_PLACEHOLDER = "#"
+DIGIT_RUN_PATTERN = re.compile(r"\d+(?:[^\S\n]+\d+)*")
+WHITESPACE_PATTERN = re.compile(r"\s+")
 
 
 class HealthIssue(StrEnum):
@@ -32,6 +36,8 @@ class HealthThresholds:
     min_unique_ngram_ratio: float = 0.3
     tail_window_chars: int = 120
     max_tail_period: int = 30
+    masked_tail_window_chars: int = 600
+    min_masked_tail_repeats: int = 3
 
 
 DEFAULT_THRESHOLDS = HealthThresholds()
@@ -127,7 +133,11 @@ def _script(character: str) -> str:
 
 
 def _looks_repetitive(text: str, thresholds: HealthThresholds) -> bool:
-    return _low_ngram_diversity(text, thresholds) or _has_periodic_tail(text, thresholds)
+    return (
+        _low_ngram_diversity(text, thresholds)
+        or _has_periodic_tail(text, thresholds)
+        or _has_masked_periodic_tail(text, thresholds)
+    )
 
 
 def _low_ngram_diversity(text: str, thresholds: HealthThresholds) -> bool:
@@ -148,3 +158,18 @@ def _has_periodic_tail(text: str, thresholds: HealthThresholds) -> bool:
         all(tail[index] == tail[index + period] for index in range(window - period))
         for period in range(1, thresholds.max_tail_period + 1)
     )
+
+
+def mask_digits(text: str) -> str:
+    masked = DIGIT_RUN_PATTERN.sub(DIGIT_PLACEHOLDER, text)
+    return WHITESPACE_PATTERN.sub(" ", masked).strip()
+
+
+def _has_masked_periodic_tail(text: str, thresholds: HealthThresholds) -> bool:
+    masked = mask_digits(text)
+    window = thresholds.masked_tail_window_chars
+    if len(masked) < window:
+        return False
+    tail = masked[-window:]
+    max_period = window // thresholds.min_masked_tail_repeats
+    return any(tail[period:] == tail[:-period] for period in range(1, max_period + 1))
